@@ -147,10 +147,10 @@ int main(void)
 		.output = {
 			.phys = output_bo->phys, //id of gem_cma object
 			.pix = {
-				//.pixelformat = V4L2_PIX_FMT_RGB24,
-				//.bytesperline = 3 * WIDTH,
-				.pixelformat = V4L2_PIX_FMT_YUV420,
-				.bytesperline = 1 * WIDTH,
+				.pixelformat = V4L2_PIX_FMT_RGB32,
+				.bytesperline = 4 * WIDTH,
+				//.pixelformat = V4L2_PIX_FMT_YUV420,
+				//.bytesperline = 1 * WIDTH,
 				.width = WIDTH,
 				.height = HEIGHT,
 			},
@@ -186,7 +186,7 @@ int main(void)
 	req.csc_coeffs[3] = a0;
 
 	/* Open YUV420P sample file */
-	FILE *fp = fopen("output.uyvy", "r");
+	FILE *fp = fopen("output.gray", "r");
 	srand(time(NULL));
 	//fseek(fp, WIDTH*HEIGHT*3/2*(rand()%87), 0);
 	fread(input_bo->ptr, 1, WIDTH*HEIGHT*2, fp);
@@ -204,13 +204,13 @@ int main(void)
 	}
 
 	//let's see it!
-	//char* rgb_matrix = (char*) malloc(WIDTH * HEIGHT * 3);
-	uint16_t* rgb = (uint16_t*)output_bo->ptr;
+	char* rgb_matrix = (char*) malloc(WIDTH * HEIGHT * 3);
+	const char * rgb = (const char *)output_bo->ptr;
 
 	//rgba565_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
-	//rgba8888_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
+	rgba8888_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
 
-	save_png("output.png", rgb, WIDTH, HEIGHT);
-	//free(rgb_matrix);
+	save_png("output.png", rgb_matrix, WIDTH, HEIGHT);
+	free(rgb_matrix);
 	return 0;
 }

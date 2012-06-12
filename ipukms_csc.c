@@ -2,10 +2,10 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <drm/drm.h>
+#include <stdint.h>
 #include <drm/imx-ipu-v3-ioctls.h>
 #include <png.h>
 
-#include <stdint.h>
 
 #define WIDTH 640
 #define HEIGHT 360
@@ -134,8 +134,8 @@ int main(void)
 		.input = {
 			.phys = input_bo->phys, //id of gem_cma object
 			.pix = {
-				.pixelformat = V4L2_PIX_FMT_YUV420,
-				.bytesperline = 1 * WIDTH,
+				.pixelformat = V4L2_PIX_FMT_UYVY,
+				.bytesperline = 2 * WIDTH,
 				.width = WIDTH,
 				.height = HEIGHT,
 			},
@@ -147,8 +147,10 @@ int main(void)
 		.output = {
 			.phys = output_bo->phys, //id of gem_cma object
 			.pix = {
-				.pixelformat = V4L2_PIX_FMT_RGB565,
-				.bytesperline = 2 * WIDTH,
+				//.pixelformat = V4L2_PIX_FMT_RGB24,
+				//.bytesperline = 3 * WIDTH,
+				.pixelformat = V4L2_PIX_FMT_YUV420,
+				.bytesperline = 1 * WIDTH,
 				.width = WIDTH,
 				.height = HEIGHT,
 			},
@@ -157,13 +159,37 @@ int main(void)
 				.height = HEIGHT,
 			},
 		},
+#if 0
+		.csc_coeffs[4][3] = {
+			{149, 0, 0},	/* C00, C01, C02 */
+			{149, 0, 0},	/* C10, C11, C12 */
+			{149, 0, 0},	/* C20, C21, C22 */
+			{0, 0, 0},	/*  A0,  A1,  A2 */
+		},
+#endif
 	};
+	uint32_t *c0, *c1, *c2, *a0;
+	c0 = calloc(3, sizeof(uint32_t));
+	c1 = calloc(3, sizeof(uint32_t));
+	c2 = calloc(3, sizeof(uint32_t));
+	a0 = calloc(3, sizeof(uint32_t));
+
+	printf("%p %p %p %p\n", c0, c1, c2, a0);
+
+	c0[0] = 149;
+	c1[0] = 149;
+	c2[0] = 149;
+
+	req.csc_coeffs[0] = c0;
+	req.csc_coeffs[1] = c1;
+	req.csc_coeffs[2] = c2;
+	req.csc_coeffs[3] = a0;
 
 	/* Open YUV420P sample file */
-	FILE *fp = fopen("BigBuckBunny_640x360_small.yuv", "r");
+	FILE *fp = fopen("output.uyvy", "r");
 	srand(time(NULL));
-	fseek(fp, WIDTH*HEIGHT*3/2*(rand()%87), 0);
-	fread(input_bo->ptr, 1, WIDTH*HEIGHT*3/2, fp);
+	//fseek(fp, WIDTH*HEIGHT*3/2*(rand()%87), 0);
+	fread(input_bo->ptr, 1, WIDTH*HEIGHT*2, fp);
 	fclose(fp);
 
 	//convert to YUV420
@@ -178,13 +204,13 @@ int main(void)
 	}
 
 	//let's see it!
-	char* rgb_matrix = (char*) malloc(WIDTH * HEIGHT * 3);
+	//char* rgb_matrix = (char*) malloc(WIDTH * HEIGHT * 3);
 	uint16_t* rgb = (uint16_t*)output_bo->ptr;
 
-	rgba565_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
+	//rgba565_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
 	//rgba8888_to_rgb888(rgb, rgb_matrix, WIDTH*HEIGHT);
 
-	save_png("output.png", rgb_matrix, WIDTH, HEIGHT);
-	free(rgb_matrix);
+	save_png("output.png", rgb, WIDTH, HEIGHT);
+	//free(rgb_matrix);
 	return 0;
 }

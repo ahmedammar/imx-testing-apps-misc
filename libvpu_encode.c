@@ -1,55 +1,3 @@
-// VPUEnc Flow (Taken from gstreamer implementation)
-#if 0
-mfw_gst_vpuenc_chain:
-    mfw_gst_vpuenc_vpuinitialize();
-        vpu_EncOpen (&vpu_enc->handle, vpu_enc->encOP);
-        mfw_gst_vpuenc_configure (vpu_enc);
-        mfw_gst_vpuenc_set_rotation (vpu_enc);
-        vpu_EncGetInitialInfo (vpu_enc->handle, &initialInfo); //get the min number of framebuffers to be allocated
-        mfw_gst_vpuenc_alloc_sourcebuffer (vpu_enc);
-        vpu_enc->numframebufs = initialInfo.minFrameBufferCount;
-        mfw_gst_vpuenc_alloc_framebuffer (vpu_enc);
-        vpu_EncRegisterFrameBuffer (vpu_enc->handle,
-                    vpu_enc->vpuRegisteredFrames,
-                    vpu_enc->numframebufs,
-                    ((vpu_enc->encOP->picWidth + 15) & ~0xF), vpu_enc->width, NULL, NULL);
-        // Set a default parameters and initialize header
-        vpu_enc->encParam->forceIPicture = 0;
-        vpu_enc->encParam->skipPicture = 0;
-        vpu_enc->encParam->enableAutoSkip = 0;
-
-        // Set the crop information.
-        vpu_enc->encParam->encTopOffset = vpu_enc->crop_top;
-        vpu_enc->encParam->encLeftOffset = vpu_enc->crop_left;
-
-        mfw_gst_vpuenc_fill_headers (vpu_enc);
-
-    vpu_enc->encParam->forceIPicture = 0/1;
-    vpu_EncGiveCommand (vpu_enc->handle,
-          ENC_SET_BITRATE, &vpu_enc->bitrate);
-
-    mfw_gst_vpuenc_copy_sink_start_frame();
-
-    vpu_ret = vpu_EncGetOutputInfo (vpu_enc->handle, vpu_enc->outputInfo);
-    while (vpu_IsBusy ())
-          vpu_WaitForInt (100);
-    vpu_ret = vpu_EncGetOutputInfo (vpu_enc->handle, vpu_enc->outputInfo);
-
-    if (vpu_enc->avc_byte_stream) {
-        // send headers (vpu_enc->hdr_dat) (first frame only)
-        memcpy (GST_BUFFER_DATA (outbuffer),
-                  GST_BUFFER_DATA (vpu_enc->hdr_data), offset);
-
-        // the rest of the frame (offset set only if first frame)
-        memcpy (GST_BUFFER_DATA (outbuffer) + offset, vpu_enc->start_addr,
-                vpu_enc->outputInfo->bitstreamSize);
-    } 
-
-    retval = mfw_gst_vpuenc_send_buffer (vpu_enc, outbuffer);
-
-    if (vpu_enc->gst_buffer && (retval == GST_FLOW_OK))
-      retval = mfw_gst_vpuenc_copy_sink_start_frame (vpu_enc);
-#endif
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -65,18 +13,15 @@ mfw_gst_vpuenc_chain:
 #define SPS_HDR                 0
 #define PPS_HDR                 1
 
-#define BUFF_FILL_SIZE          (1024 * 1024)
+#define BUFF_FILL_SIZE          (64 * 1024)
 #define DEFAULT_HEIGHT          360
 #define DEFAULT_WIDTH           640
 #define DEFAULT_FRAME_RATE      30
 #define DEFAULT_GOP_SIZE        30
-#define MAX_GOP_SIZE            32767
-#define MAX_BITRATE             32767   /* 0x7FFF */
 #define VPU_DEFAULT_H264_QP     25
 
 #define H264_QP_MAX             51
-#define H264_QP_MIN             0
-#define VPU_MAX_H264_QP         51
+#define H264_QP_MIN             21
 
 int main(void){
     int ret = 0, i;
@@ -92,6 +37,7 @@ int main(void){
     EncOutputInfo *outputInfo = malloc(sizeof(EncOutputInfo));
     EncParam *encParam = malloc(sizeof(EncParam));
 
+    // Set allocated memory to zero
     memset (initialInfo, 0, sizeof (EncInitialInfo));
     memset (encParam, 0, sizeof (EncParam));
     memset (encOP, 0, sizeof (EncOpenParam));
@@ -117,14 +63,13 @@ int main(void){
         ret = -1;
         goto free;
     }
-    bit_stream_buf.virt_uaddr = IOGetVirtMem (&bit_stream_buf);
+    IOGetVirtMem (&bit_stream_buf);
 
     // Set up encoder operation parameters
     encOP->bitstreamBuffer = bit_stream_buf.phy_addr;
     encOP->bitstreamBufferSize = BUFF_FILL_SIZE;
     encOP->bitstreamFormat = STD_AVC;
-    encOP->bitRate = MAX_BITRATE - 1;
-    encOP->gopSize = DEFAULT_GOP_SIZE - 1;
+    encOP->gopSize = DEFAULT_GOP_SIZE;
     encOP->rcIntraQp = VPU_DEFAULT_H264_QP;
     encOP->userQpMaxEnable = 1;
     encOP->userQpMax = H264_QP_MAX;
@@ -134,7 +79,6 @@ int main(void){
     encOP->picWidth = DEFAULT_WIDTH;
     encOP->picHeight = DEFAULT_HEIGHT;
     encOP->ringBufferEnable = 0;
-    //encOP->bitRate = MAX_BITRATE >> 10;
 
     // Open encoder
     vpu_EncOpen (handle, encOP);
@@ -166,7 +110,7 @@ int main(void){
         ret = -1;
         goto close;
     }
-    source_buf.virt_uaddr = IOGetVirtMem(&source_buf);
+    IOGetVirtMem(&source_buf);
     source_frame.strideY = DEFAULT_WIDTH;
     source_frame.strideC = DEFAULT_WIDTH >> 1;
     source_frame.bufY = source_buf.phy_addr;
@@ -183,6 +127,7 @@ int main(void){
     memset (framedesc, 0, (sizeof (vpu_mem_desc) * num));
     memset (frame, 0, (sizeof (FrameBuffer) * num));
 
+    // Allocate each destination frame buffer
     for (i = 0; i < num; i++) {
         framedesc[i].size = DEFAULT_WIDTH * DEFAULT_HEIGHT * 3/2;
         IOGetPhyMem (&(framedesc[i]));
@@ -191,7 +136,7 @@ int main(void){
             ret = -1;
             goto frame;
         }
-        framedesc[i].virt_uaddr = IOGetVirtMem (&(framedesc[i]));
+        IOGetVirtMem (&(framedesc[i]));
         frame[i].strideY = DEFAULT_WIDTH;
         frame[i].strideC = DEFAULT_WIDTH >> 1;
 
@@ -202,14 +147,14 @@ int main(void){
     }
 
     // Register allocated frame buffers
-    vpu_EncRegisterFrameBuffer (*handle, frame, num, DEFAULT_WIDTH, DEFAULT_WIDTH);
+    vpu_EncRegisterFrameBuffer (*handle, frame, num, DEFAULT_WIDTH, DEFAULT_WIDTH, 0, 0, NULL);
 
     encParam->forceIPicture = 0;
     encParam->skipPicture = 0;
     encParam->enableAutoSkip = 0;
-    encParam->quantParam = VPU_MAX_H264_QP;
+    encParam->quantParam = VPU_DEFAULT_H264_QP;
 
-    // Encoding Headers
+    // Get encoding Headers
     EncHeaderParam enchdr_param = { 0 };
     uint8_t *ptr;
     uint8_t *header[NUM_INPUT_BUF];
@@ -242,7 +187,7 @@ int main(void){
     printf("header[PPS_HDR]: %d bytes\n",  headersize[PPS_HDR]);
 
     // Open output file and write headers
-    FILE *out = fopen ("BigBuckBunny_640x360_small.h264", "w");
+    FILE *out = fopen ("BigBuckBunny_640x360_small.h264", "w"); //stdout
     fwrite(header[SPS_HDR], 1, headersize[SPS_HDR], out);
     fwrite(header[PPS_HDR], 1, headersize[PPS_HDR], out);
 
@@ -251,17 +196,15 @@ int main(void){
     while(fread((void*) source_buf.virt_uaddr, 1, DEFAULT_WIDTH * DEFAULT_HEIGHT * 3/2, in)) {
         encParam->sourceFrame = &source_frame;
 
-        vpu_EncGiveCommand (*handle, ENC_SET_BITRATE, &encOP->bitRate);
-
+        // Encode a single frame
         vpu_EncStartOneFrame (*handle, encParam);
         while(vpu_IsBusy()) {
-            printf(".");
-            fflush(stdout);
             vpu_WaitForInt (100);
         }
 
         vpu_EncGetOutputInfo (*handle, outputInfo);
 
+        // Write bitstream to file
         fwrite((void*) bit_stream_buf.virt_uaddr, 1, outputInfo->bitstreamSize, out);
     }
     printf("\n");
